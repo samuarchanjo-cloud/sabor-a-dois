@@ -3,7 +3,11 @@ import {
   ArrowLeft,
   Bike,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   CreditCard,
+  Flame,
+  Grid2X2,
   Home,
   Lock,
   MapPin,
@@ -12,6 +16,7 @@ import {
   PackageCheck,
   Plus,
   Search,
+  Settings,
   ShoppingCart,
   Store,
   TriangleAlert,
@@ -41,7 +46,7 @@ import {
   subscribeToStoreChanges,
 } from "./lib/api";
 
-const STORAGE_KEY = "rafa-cart";
+const STORAGE_KEY = "digital-menu-cart-v1";
 const DELIVERY_ADDRESS_FIELDS = new Set(["postalCode", "street", "number", "complement", "neighborhood", "city", "state", "reference"]);
 const EMPTY_STORE = {
   products: [],
@@ -85,14 +90,24 @@ function publicProducts(products) {
   return products.filter((product) => product.visible !== false);
 }
 
+function hexToRgb(value, fallback = "197, 14, 12") {
+  const match = /^#([0-9a-f]{6})$/i.exec(value || "");
+  if (!match) return fallback;
+  const number = Number.parseInt(match[1], 16);
+  return `${(number >> 16) & 255}, ${(number >> 8) & 255}, ${number & 255}`;
+}
+
 function friendlyOrderError(error) {
   const message = `${error?.message || ""} ${error?.details || ""}`;
+  if (message.includes("SETUP_INCOMPLETE")) return "O cardápio ainda está em configuração.";
   if (message.includes("STORE_CLOSED")) return "O estabelecimento está fechado. O pedido não foi salvo nem enviado.";
   if (message.includes("LOCATION_REQUIRED")) return "Valide o endereço de entrega antes de finalizar o pedido.";
   if (message.includes("OUTSIDE_DELIVERY_AREA")) return "Seu endereço está fora da área máxima de entrega.";
   if (message.includes("BELOW_ONE_KM_BLOCKED")) return "Pedidos abaixo de 1 km estão bloqueados para entrega.";
   if (message.includes("DELIVERY_NOT_CONFIGURED") || message.includes("NO_DELIVERY_RANGE")) return "Não há uma taxa configurada para esta distância.";
   if (message.includes("PRODUCT_UNAVAILABLE")) return "Um produto do carrinho ficou indisponível. Revise o pedido.";
+  if (message.includes("PAYMENT_DISABLED")) return "A forma de pagamento selecionada não está disponível.";
+  if (message.includes("MINIMUM_ORDER_NOT_REACHED")) return "O valor do pedido ficou abaixo do mínimo configurado.";
   if (message.includes("NOT_ADMIN")) return "Este usuário não está autorizado como administrador.";
   return error?.message || "Não foi possível finalizar o pedido.";
 }
@@ -101,7 +116,7 @@ function App() {
   const [store, setStore] = useState(EMPTY_STORE);
   const [loadingStore, setLoadingStore] = useState(true);
   const [cart, setCart] = useState(readCart);
-  const [view, setView] = useState("home");
+  const [view, setView] = useState(() => window.location.pathname === "/admin" ? "admin" : "home");
   const [activeCategory, setActiveCategory] = useState(null);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState(null);
@@ -206,6 +221,58 @@ function App() {
   useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(cart)), [cart]);
 
   useEffect(() => {
+    const settings = store.settings;
+    const root = document.documentElement;
+    const variables = {
+      "--bg": settings.theme_background_color,
+      "--card": settings.theme_surface_color,
+      "--red": settings.theme_primary_color,
+      "--red-dark": settings.theme_primary_color,
+      "--yellow": settings.theme_secondary_color,
+      "--yellow-light": settings.theme_secondary_color,
+      "--white": settings.theme_text_color,
+      "--primary-rgb": hexToRgb(settings.theme_primary_color),
+      "--secondary-rgb": hexToRgb(settings.theme_secondary_color, "255, 193, 7"),
+    };
+    Object.entries(variables).forEach(([name, value]) => value && root.style.setProperty(name, value));
+    document.title = settings.store_name || "Cardápio digital";
+    const description = settings.store_description || "Cardápio digital para pedidos online.";
+    const setMeta = (selector, content) => {
+      const element = document.querySelector(selector);
+      if (element) element.setAttribute("content", content || "");
+    };
+    setMeta('meta[name="description"]', description);
+    setMeta('meta[name="theme-color"]', settings.theme_background_color || "#050505");
+    setMeta('meta[property="og:title"]', settings.store_name || "Cardápio digital");
+    setMeta('meta[property="og:description"]', description);
+    setMeta('meta[property="og:image"]', settings.brand_hero_url || settings.brand_logo_url || "");
+    const manifest = document.querySelector('link[rel="manifest"]');
+    if (manifest) {
+      const data = {
+        name: settings.store_name || "Cardápio digital",
+        short_name: (settings.store_name || "Cardápio").slice(0, 24),
+        display: "standalone",
+        start_url: "/",
+        background_color: settings.theme_background_color || "#050505",
+        theme_color: settings.theme_primary_color || "#c50e0c",
+        icons: [{ src: "/menu-icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" }],
+      };
+      manifest.href = `data:application/manifest+json,${encodeURIComponent(JSON.stringify(data))}`;
+    }
+  }, [store.settings]);
+
+  useEffect(() => {
+    const target = view === "admin" ? "/admin" : "/";
+    if (window.location.pathname !== target) window.history.pushState({ view }, "", target);
+  }, [view]);
+
+  useEffect(() => {
+    const navigate = () => setView(window.location.pathname === "/admin" ? "admin" : "home");
+    window.addEventListener("popstate", navigate);
+    return () => window.removeEventListener("popstate", navigate);
+  }, []);
+
+  useEffect(() => {
     const postalCode = postalCodeDigits(checkout.postalCode);
     if (postalCode.length !== 8) {
       setPostalCodeStatus({ type: "idle", message: "" });
@@ -257,7 +324,27 @@ function App() {
   const isCardPayment = ["credito", "debito"].includes(checkout.payment);
   const cardFee = isCardPayment ? (subtotal + deliveryFee) * (Number(store.settings.card_fee_percent) || 0) / 100 : 0;
   const total = subtotal + deliveryFee + cardFee;
+  const availablePayments = useMemo(() => [
+    { id: "pix", label: "Pix", enabled: store.settings.pix_enabled, icon: Wallet },
+    { id: "dinheiro", label: "Dinheiro", enabled: store.settings.cash_enabled, icon: Wallet },
+    { id: "credito", label: "Cartão de crédito", enabled: store.settings.credit_card_enabled, icon: CreditCard },
+    { id: "debito", label: "Cartão de débito", enabled: store.settings.debit_card_enabled, icon: CreditCard },
+  ].filter((item) => item.enabled), [store.settings]);
+  const minimumOrder = Number(store.settings.minimum_order_value) || 0;
+
+  useEffect(() => {
+    if (availablePayments.length && !availablePayments.some((item) => item.id === checkout.payment)) {
+      setCheckout((current) => ({ ...current, payment: availablePayments[0].id }));
+    }
+  }, [availablePayments, checkout.payment]);
   const currentCategory = visibleCategories.find((category) => category.id === activeCategory);
+  const featuredProducts = useMemo(() => {
+    const featured = visibleProducts.filter((product) => product.featured && !isSoldOut(product));
+    return (featured.length ? featured : visibleProducts.filter((product) => !isSoldOut(product))).slice(0, 6);
+  }, [visibleProducts]);
+  const selectedDeliveryAddress = checkout.street && checkout.number
+    ? `${checkout.street}, ${checkout.number}`
+    : "Adicione seu endereço no checkout";
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLocaleLowerCase("pt-BR");
     if (!term) return [];
@@ -270,6 +357,13 @@ function App() {
 
   function openCategory(categoryId) {
     setActiveCategory(categoryId);
+    setSearch("");
+    setView("category");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function openCategories() {
+    setActiveCategory((current) => current || visibleCategories[0]?.id || null);
     setSearch("");
     setView("category");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -320,11 +414,15 @@ function App() {
     setAddressValidationStatus({ type: "loading", message: "Validando endereço e calculando entrega..." });
     try {
       const coordinates = await geocodeDeliveryAddress(checkout, { signal: controller.signal });
+      const hasStoreCoordinates = store.settings.store_latitude !== null &&
+        store.settings.store_latitude !== "" &&
+        store.settings.store_longitude !== null &&
+        store.settings.store_longitude !== "";
       const storeCoordinates = {
         latitude: Number(store.settings.store_latitude),
         longitude: Number(store.settings.store_longitude),
       };
-      if (!Number.isFinite(storeCoordinates.latitude) || !Number.isFinite(storeCoordinates.longitude)) {
+      if (!hasStoreCoordinates || !Number.isFinite(storeCoordinates.latitude) || !Number.isFinite(storeCoordinates.longitude)) {
         throw new Error("A localização do estabelecimento não está configurada corretamente.");
       }
       const km = distanceInKm(storeCoordinates, coordinates);
@@ -376,6 +474,7 @@ function App() {
       `💰 Total: ${money(order.total)}`,
       ...paymentLines,
       checkout.notes ? `📝 ${checkout.notes}` : "📝 Sem observação",
+      order.external_delivery ? "🚕 Entrega por Uber solicitada e paga pelo cliente." : "",
     ].filter(Boolean).join("\n");
   }
 
@@ -387,7 +486,10 @@ function App() {
       showNotice(`Estamos fechados. Próxima abertura: ${freshStatus.nextLabel}.`, "error");
       return;
     }
+    if (!store.settings.setup_completed) return showNotice("O cardápio ainda está em configuração.", "error");
     if (!cartLines.length) return showNotice("Adicione pelo menos um produto ao carrinho.", "error");
+    if (subtotal < minimumOrder) return showNotice(`O pedido mínimo é ${money(minimumOrder)}.`, "error");
+    if (!availablePayments.some((item) => item.id === checkout.payment)) return showNotice("Selecione uma forma de pagamento disponível.", "error");
     const addressValidationMessage = checkout.deliveryType === "entrega" ? validateDeliveryAddressFields(checkout) : "";
     if (addressValidationMessage) return showNotice(addressValidationMessage, "error");
     if (checkout.deliveryType === "entrega" && !deliveryAssessment.allowed) return showNotice(deliveryAssessment.message, "error");
@@ -409,6 +511,7 @@ function App() {
         longitude: checkout.deliveryType === "entrega" ? deliveryLocation?.longitude : null,
         items: cartLines.map((item) => ({ product_id: item.id, quantity: item.qty })),
       });
+      if (!store.settings.whatsapp_number) throw new Error("O WhatsApp do estabelecimento ainda não foi configurado.");
       const url = `https://wa.me/${store.settings.whatsapp_number}?text=${encodeURIComponent(buildWhatsappMessage(order))}`;
       setCart([]);
       showNotice("Pedido salvo. Abrindo o WhatsApp...", "success");
@@ -430,26 +533,54 @@ function App() {
   return (
     <div className={view === "admin" ? "app-shell admin-shell" : "app-shell"}>
       <header className="topbar">
-        <button className="brand-button" onClick={() => setView("home")} aria-label="Início"><img src={store.settings.brand_logo_url} alt={store.settings.store_name} /></button>
-        <div className="store-chip"><span className={status.open ? "pulse open" : "pulse"} /><div><strong>{status.label}</strong><small>{status.detail}</small></div></div>
-        <button className="cart-button" onClick={() => setView("cart")} aria-label="Abrir carrinho"><ShoppingCart size={22} />{cartCount > 0 && <span>{cartCount}</span>}</button>
+        <button className="brand-lockup" onClick={() => setView("home")} aria-label="Ir para o início">
+          {store.settings.brand_logo_url
+            ? <img src={store.settings.brand_logo_url} alt="" />
+            : <span className="brand-mark"><Flame size={24} /></span>}
+          <span className="brand-copy"><strong>{store.settings.store_name}</strong><small>{store.settings.store_description || "Cardápio digital"}</small></span>
+        </button>
+        <div className="header-actions">
+          <span className={status.open ? "open-status" : "open-status closed"}><i />{status.label}</span>
+          <button className="admin-shortcut" onClick={() => setView("admin")} aria-label="Abrir área administrativa"><Settings size={21} /><small>Admin</small></button>
+        </div>
       </header>
 
       <main>
-        {view !== "admin" && <section className="search-wrap"><Search size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar produtos" aria-label="Buscar produtos" /></section>}
+        {view !== "admin" && view !== "home" && view !== "cart" && <section className="search-wrap"><Search size={18} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar no cardápio" aria-label="Buscar produtos" /></section>}
         {notice && <div className={`notice ${notice.type}`}>{notice.message}</div>}
         {loadingStore && <div className="notice">Carregando cardápio...</div>}
+        {!loadingStore && !store.settings.setup_completed && view !== "admin" && <div className="setup-public-notice"><Store size={20}/><div><strong>Cardápio em configuração</strong><span>Acesse o painel administrativo para concluir a publicação.</span></div></div>}
         {!status.open && view !== "admin" && <ClosedNotice status={status} />}
 
         {search.trim() && view !== "admin" && <ProductList title="Resultado da busca" products={filteredProducts} onAdd={addToCart} onBack={() => setSearch("")} />}
 
-        {!search.trim() && view === "home" && <><section className="hero"><img src={store.settings.brand_hero_url} alt={`Banner ${store.settings.store_name}`} /></section><section className="category-section"><div className="section-title"><h1>Categorias</h1><span>Escolha sua fome</span></div><div className="category-stack">{visibleCategories.map((category) => <button className="category-banner" key={category.id} type="button" aria-label={`Abrir ${category.name}`} onClick={() => openCategory(category.id)}><img src={category.banner_url} alt={category.name} /></button>)}</div></section></>}
+        {!search.trim() && view === "home" && <div className="home-view">
+          <button className="delivery-address-card" type="button" onClick={() => cartLines.length ? setView("checkout") : openCategories()}>
+            <span className="address-icon"><MapPin size={23} /></span>
+            <span><small>Entregar em</small><strong>{selectedDeliveryAddress}</strong>{checkout.neighborhood && <em>{checkout.neighborhood}, {checkout.city} - {checkout.state}</em>}</span>
+            <ChevronDown size={20} />
+          </button>
+          <section className={store.settings.brand_hero_url ? "hero" : "hero hero-placeholder"}>
+            {store.settings.brand_hero_url && <img src={store.settings.brand_hero_url} alt={`Banner ${store.settings.store_name}`} />}
+            <div className="hero-copy"><span>Feito para compartilhar</span><h1>{store.settings.store_name}</h1><p>{store.settings.store_description || "Sabor marcante, preparado com carinho."}</p>{visibleCategories.length > 0 && <button type="button" onClick={() => openCategory(visibleCategories[0].id)}>Peça agora <ChevronRight size={18} /></button>}</div>
+          </section>
+          <section className="category-section">
+            <div className="section-heading"><div><span>Explore</span><h2>Categorias</h2></div><button type="button" onClick={openCategories}>Ver todas <ChevronRight size={17} /></button></div>
+            <div className="category-rail">{visibleCategories.map((category) => <button className={category.banner_url ? "category-tile" : "category-tile category-placeholder"} key={category.id} type="button" onClick={() => openCategory(category.id)}>{category.banner_url ? <img src={category.banner_url} alt="" /> : <span><PackageCheck size={28}/></span>}<strong>{category.name}</strong><ChevronRight size={17}/></button>)}</div>
+            {visibleCategories.length === 0 && <p className="empty">Nenhuma categoria cadastrada.</p>}
+          </section>
+          <section className="featured-section">
+            <div className="section-heading"><div><span>Os favoritos da casa</span><h2><Flame size={22}/> Mais pedidos</h2></div>{visibleCategories.length > 0 && <button type="button" onClick={openCategories}>Ver todos <ChevronRight size={17}/></button>}</div>
+            <div className="featured-rail">{featuredProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={addToCart} compact />)}</div>
+            {featuredProducts.length === 0 && <p className="empty">Os produtos ativos aparecerão aqui.</p>}
+          </section>
+        </div>}
 
-        {!search.trim() && view === "category" && <ProductList title={currentCategory?.name || "Produtos"} subtitle={currentCategory?.description} products={visibleProducts.filter((product) => product.category === activeCategory)} onAdd={addToCart} onBack={() => setView("home")} />}
+        {!search.trim() && view === "category" && <CategoryView categories={visibleCategories} products={visibleProducts} activeCategory={activeCategory || currentCategory?.id} onSelect={setActiveCategory} onAdd={addToCart} />}
 
-        {!search.trim() && view === "cart" && <CartView cartLines={cartLines} subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} checkout={checkout} status={status} onQty={updateQty} onRemove={(id) => setCart((current) => current.filter((item) => item.id !== id))} onCheckout={() => status.open ? setView("checkout") : showNotice(`Estamos fechados. Próxima abertura: ${status.nextLabel}.`, "error")} onBack={() => setView("home")} />}
+        {!search.trim() && view === "cart" && <CartView cartLines={cartLines} subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} checkout={checkout} status={status} externalDelivery={deliveryAssessment.externalDelivery} onQty={updateQty} onRemove={(id) => setCart((current) => current.filter((item) => item.id !== id))} onCheckout={() => status.open ? setView("checkout") : showNotice(`Estamos fechados. Próxima abertura: ${status.nextLabel}.`, "error")} onBack={openCategories} />}
 
-        {!search.trim() && view === "checkout" && <CheckoutView cartLines={cartLines} subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} checkout={checkout} setCheckoutField={setCheckoutField} finishOrder={finishOrder} deliveryLocation={deliveryLocation} deliveryAssessment={deliveryAssessment} postalCodeStatus={postalCodeStatus} addressValidationStatus={addressValidationStatus} validateDeliveryAddress={validateDeliveryAddress} validatingAddress={validatingAddress} pixCopyStatus={pixCopyStatus} copyPixKey={copyPixKey} status={status} settings={store.settings} submitting={submittingOrder} onBack={() => setView("cart")} />}
+        {!search.trim() && view === "checkout" && <CheckoutView cartLines={cartLines} subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} checkout={checkout} setCheckoutField={setCheckoutField} finishOrder={finishOrder} deliveryLocation={deliveryLocation} deliveryAssessment={deliveryAssessment} postalCodeStatus={postalCodeStatus} addressValidationStatus={addressValidationStatus} validateDeliveryAddress={validateDeliveryAddress} validatingAddress={validatingAddress} pixCopyStatus={pixCopyStatus} copyPixKey={copyPixKey} status={status} settings={store.settings} availablePayments={availablePayments} minimumOrder={minimumOrder} submitting={submittingOrder} onBack={() => setView("cart")} />}
 
         {!search.trim() && view === "admin" && (authLoading
           ? <p className="empty">Verificando sessão...</p>
@@ -462,9 +593,9 @@ function App() {
 
       <nav className="bottom-nav">
         <button className={view === "home" ? "active" : ""} onClick={() => { setSearch(""); setView("home"); }}><Home size={21} /><span>Início</span></button>
-        <button onClick={() => { setSearch(""); setView("home"); window.setTimeout(() => document.querySelector(".category-section")?.scrollIntoView({ behavior: "smooth" }), 0); }}><PackageCheck size={21} /><span>Categorias</span></button>
-        <button className={view === "cart" ? "active" : ""} onClick={() => { setSearch(""); setView("cart"); }}><ShoppingCart size={21} /><span>Carrinho</span></button>
-        <button className={view === "admin" ? "active" : ""} onClick={() => { setSearch(""); setView("admin"); }}><Lock size={21} /><span>Admin</span></button>
+        <button className={view === "category" ? "active" : ""} onClick={openCategories}><Grid2X2 size={21} /><span>Categorias</span></button>
+        <button className={view === "cart" || view === "checkout" ? "active cart-nav-button" : "cart-nav-button"} onClick={() => { setSearch(""); setView("cart"); }}><span className="nav-icon"><ShoppingCart size={23} />{cartCount > 0 && <b>{cartCount}</b>}</span><span>Carrinho</span></button>
+        <button className={view === "admin" ? "active" : ""} onClick={() => { setSearch(""); setView("admin"); }}><Settings size={21} /><span>Admin</span></button>
       </nav>
     </div>
   );
@@ -474,17 +605,36 @@ function ClosedNotice({ status }) {
   return <div className="closed-notice"><Lock size={19} /><div><strong>Estamos fechados para pedidos</strong><span>Você pode consultar o cardápio. Próxima abertura: {status.nextLabel}.</span></div></div>;
 }
 
+function ProductCard({ product, onAdd, compact = false }) {
+  return <article className={`${isSoldOut(product) ? "product-card soldout" : "product-card"}${compact ? " compact" : ""}`}>
+    <div className="product-media">{product.image ? <img src={product.image} alt={product.name} /> : <div className="image-placeholder"><PackageCheck size={30}/></div>}{isSoldOut(product) && <span>Esgotado</span>}</div>
+    <div className="product-info">
+      <strong className="product-name">{product.name}</strong>
+      {!compact && product.description && <p>{product.description}</p>}
+      <div className="product-action"><div className="price-block"><strong>{money(product.price)}</strong>{product.featured && <small>Destaque</small>}</div><button type="button" aria-label={`Adicionar ${product.name}`} disabled={isSoldOut(product)} onClick={() => onAdd(product)}><Plus size={20}/><span>Adicionar</span></button></div>
+    </div>
+  </article>;
+}
+
 function ProductList({ title, subtitle, products, onAdd, onBack }) {
-  return <section className="products-view"><button className="back-button" onClick={onBack}><ArrowLeft size={18} />Voltar</button><div className="section-title"><h1>{title}</h1>{subtitle && <span>{subtitle}</span>}</div><div className="product-grid">{products.map((product) => <article className={isSoldOut(product) ? "product-card soldout" : "product-card"} key={product.id}><img src={product.image} alt={product.name} /><div className="product-info"><div className="product-heading"><strong>{product.name}</strong><span className={isSoldOut(product) ? "status" : "status available"}>{product.status}</span></div><p>{product.description}</p><div className="product-action"><div className="price-block"><strong>{money(product.price)}</strong>{product.featured && <small>Destaque</small>}</div><button disabled={isSoldOut(product)} onClick={() => onAdd(product)}><Plus size={18} />Adicionar</button></div></div></article>)}</div>{products.length === 0 && <p className="empty">Nenhum produto encontrado.</p>}</section>;
+  return <section className="products-view"><button className="back-button" onClick={onBack}><ArrowLeft size={18} />Voltar</button><div className="section-title"><h1>{title}</h1>{subtitle && <span>{subtitle}</span>}</div><div className="product-grid">{products.map((product) => <ProductCard key={product.id} product={product} onAdd={onAdd} />)}</div>{products.length === 0 && <p className="empty">Nenhum produto encontrado.</p>}</section>;
 }
 
-function CartView({ cartLines, subtotal, deliveryFee, cardFee, isCardPayment, total, checkout, status, onQty, onRemove, onCheckout, onBack }) {
-  return <section className="cart-view"><button className="back-button" onClick={onBack}><ArrowLeft size={18} />Continuar escolhendo</button><div className="section-title"><h1>Carrinho</h1><span>Confira os itens antes de finalizar</span></div>{cartLines.length ? <><div className="cart-list">{cartLines.map((item) => <article className="cart-item" key={item.id}><img src={item.product.image} alt={item.product.name} /><div><strong>{item.product.name}</strong><span>{money(item.product.price)} cada</span><div className="qty-row"><button onClick={() => onQty(item.id, -1)} aria-label="Diminuir"><Minus size={16} /></button><b>{item.qty}</b><button onClick={() => onQty(item.id, 1)} aria-label="Aumentar"><Plus size={16} /></button><button className="ghost-danger" onClick={() => onRemove(item.id)} aria-label="Remover"><Trash2 size={16} /></button></div></div><strong>{money(item.lineTotal)}</strong></article>)}</div><Totals subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} deliveryType={checkout.deliveryType} /><button className="primary-action" disabled={!status.open} onClick={onCheckout}>{status.open ? "Finalizar pedido" : "Fechado para pedidos"}</button>{!status.open && <p className="action-help">Próxima abertura: {status.nextLabel}.</p>}</> : <p className="empty">Seu carrinho está vazio.</p>}</section>;
+function CategoryView({ categories, products, activeCategory, onSelect, onAdd }) {
+  const selectedId = categories.some((category) => category.id === activeCategory) ? activeCategory : categories[0]?.id;
+  const selected = categories.find((category) => category.id === selectedId);
+  const categoryProducts = products.filter((product) => product.category === selectedId);
+  return <section className="categories-view"><div className="page-heading"><span>Nosso cardápio</span><h1>Categorias</h1><p>{selected?.description || "Escolha seus itens favoritos"}</p></div><div className="category-tabs" role="tablist">{categories.map((category) => <button type="button" role="tab" aria-selected={selectedId === category.id} className={selectedId === category.id ? "active" : ""} key={category.id} onClick={() => onSelect(category.id)}>{category.name}</button>)}</div><div className="product-grid">{categoryProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={onAdd}/>)}</div>{categories.length === 0 ? <p className="empty">Nenhuma categoria cadastrada.</p> : categoryProducts.length === 0 && <p className="empty">Nenhum produto ativo nesta categoria.</p>}</section>;
 }
 
-function CheckoutView({ cartLines, subtotal, deliveryFee, cardFee, isCardPayment, total, checkout, setCheckoutField, finishOrder, deliveryLocation, deliveryAssessment, postalCodeStatus, addressValidationStatus, validateDeliveryAddress, validatingAddress, pixCopyStatus, copyPixKey, status, settings, submitting, onBack }) {
+function CartView({ cartLines, subtotal, deliveryFee, cardFee, isCardPayment, total, checkout, status, externalDelivery, onQty, onRemove, onCheckout, onBack }) {
+  return <section className="cart-view"><button className="back-button" onClick={onBack}><ArrowLeft size={18} />Continuar escolhendo</button><div className="page-heading"><span>Seu pedido</span><h1>Carrinho</h1><p>Confira seus itens e finalize com segurança</p></div>{cartLines.length ? <><div className="cart-list">{cartLines.map((item) => <article className="cart-item" key={item.id}>{item.product.image?<img src={item.product.image} alt={item.product.name} />:<div className="image-placeholder small"><PackageCheck size={22}/></div>}<div className="cart-item-copy"><strong>{item.product.name}</strong>{item.product.description && <span>{item.product.description}</span>}<b>{money(item.product.price)}</b><div className="qty-row"><button onClick={() => onQty(item.id, -1)} aria-label="Diminuir"><Minus size={16} /></button><strong>{item.qty}</strong><button onClick={() => onQty(item.id, 1)} aria-label="Aumentar"><Plus size={16} /></button></div></div><button className="remove-line" onClick={() => onRemove(item.id)} aria-label={`Remover ${item.product.name}`}><Trash2 size={18} /></button></article>)}</div><Totals subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} deliveryType={checkout.deliveryType} externalDelivery={externalDelivery}/><button className="primary-action" disabled={!status.open} onClick={onCheckout}><MessageCircle size={20}/>{status.open ? "Continuar para o checkout" : "Fechado para pedidos"}</button>{!status.open && <p className="action-help">Próxima abertura: {status.nextLabel}.</p>}</> : <div className="empty-state"><ShoppingCart size={34}/><strong>Seu carrinho está vazio</strong><p>Explore as categorias e escolha seus favoritos.</p><button type="button" onClick={onBack}>Ver cardápio</button></div>}</section>;
+}
+
+function CheckoutView({ cartLines, subtotal, deliveryFee, cardFee, isCardPayment, total, checkout, setCheckoutField, finishOrder, deliveryLocation, deliveryAssessment, postalCodeStatus, addressValidationStatus, validateDeliveryAddress, validatingAddress, pixCopyStatus, copyPixKey, status, settings, availablePayments, minimumOrder, submitting, onBack }) {
   const needsAddress = checkout.deliveryType === "entrega";
-  const blocked = !status.open || submitting || (needsAddress && !deliveryAssessment.allowed);
+  const belowMinimum = subtotal < minimumOrder;
+  const blocked = !status.open || submitting || !settings.setup_completed || availablePayments.length === 0 || belowMinimum || (needsAddress && !deliveryAssessment.allowed);
   const deliveryErrorMessage = addressValidationStatus.type === "error"
     ? addressValidationStatus.message
     : deliveryAssessment.message;
@@ -503,25 +653,26 @@ function CheckoutView({ cartLines, subtotal, deliveryFee, cardFee, isCardPayment
       {addressValidationStatus.type === "warning" && <small className="address-helper warning">{addressValidationStatus.message}</small>}
       {deliveryLocation && <LocationStatusCard distanceKm={deliveryLocation.km} assessment={deliveryAssessment} />}
     </>}
-    <div className="option-group"><span>Forma de pagamento</span><div className="payment-list"><PaymentButton icon={<Wallet size={18} />} active={checkout.payment === "pix"} label="Pix" onClick={() => setCheckoutField("payment", "pix")} /><PaymentButton icon={<Wallet size={18} />} active={checkout.payment === "dinheiro"} label="Dinheiro" onClick={() => setCheckoutField("payment", "dinheiro")} /><PaymentButton icon={<CreditCard size={18} />} active={checkout.payment === "credito"} label="Cartão de crédito" onClick={() => setCheckoutField("payment", "credito")} /><PaymentButton icon={<CreditCard size={18} />} active={checkout.payment === "debito"} label="Cartão de débito" onClick={() => setCheckoutField("payment", "debito")} /></div></div>
+    <div className="option-group"><span>Forma de pagamento</span><div className="payment-list">{availablePayments.map((method)=>{const Icon=method.icon;return <PaymentButton key={method.id} icon={<Icon size={18}/>} active={checkout.payment===method.id} label={method.label} onClick={()=>setCheckoutField("payment",method.id)}/>;})}</div>{availablePayments.length===0&&<small className="address-helper error">Nenhuma forma de pagamento configurada.</small>}</div>
     {checkout.payment === "dinheiro" && <div className="option-group change-option"><span>Precisa de troco?</span><div className="segmented"><button type="button" className={!checkout.needsChange ? "selected" : ""} onClick={() => setCheckoutField("needsChange", false)}>Não</button><button type="button" className={checkout.needsChange ? "selected" : ""} onClick={() => setCheckoutField("needsChange", true)}>Sim</button></div>{checkout.needsChange && <label>Troco para quanto?<input inputMode="decimal" placeholder="R$ 100,00" value={checkout.changeFor} onBlur={() => setCheckoutField("changeFor", moneyFromInput(checkout.changeFor))} onChange={(event) => setCheckoutField("changeFor", event.target.value)} /></label>}</div>}
-    {checkout.payment === "pix" && <div className="pix-box"><img className="pix-qr" src={settings.pix_qr_code_url} alt="QR Code Pix" /><div><strong>Pix</strong><p>Nome: {settings.pix_name}</p><p>{settings.pix_key}</p><button type="button" className="copy-pix-button" onClick={copyPixKey}>Copiar chave Pix</button>{pixCopyStatus && <span className="pix-copy-status">{pixCopyStatus}</span>}<small>Envie o pedido antes de pagar e encaminhe o comprovante pelo WhatsApp.</small></div></div>}
-    <label>Observação do pedido<textarea value={checkout.notes} onChange={(event) => setCheckoutField("notes", event.target.value)} /></label><div className="mini-order"><strong>{cartLines.length} item(ns) no pedido</strong><Totals subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} deliveryType={checkout.deliveryType} deliveryDistance={deliveryLocation} /></div>
-    {!status.open && <div className="form-error">Estamos fechados. Próxima abertura: {status.nextLabel}.</div>}{needsAddress && !deliveryAssessment.allowed && <div className="form-error">{deliveryErrorMessage}</div>}
+    {checkout.payment === "pix" && settings.pix_enabled && <div className="pix-box">{settings.pix_qr_code_url&&<img className="pix-qr" src={settings.pix_qr_code_url} alt="QR Code Pix" />}<div><strong>Pix</strong><p>Nome: {settings.pix_name}</p><p>{settings.pix_key}</p><button type="button" className="copy-pix-button" onClick={copyPixKey}>Copiar chave Pix</button>{pixCopyStatus && <span className="pix-copy-status">{pixCopyStatus}</span>}<small>Envie o pedido antes de pagar e encaminhe o comprovante pelo WhatsApp.</small></div></div>}
+    <label>Observação do pedido<textarea value={checkout.notes} onChange={(event) => setCheckoutField("notes", event.target.value)} /></label><div className="mini-order"><strong>{cartLines.length} item(ns) no pedido</strong><Totals subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} deliveryType={checkout.deliveryType} deliveryDistance={deliveryLocation} externalDelivery={deliveryAssessment.externalDelivery} /></div>
+    {!status.open && <div className="form-error">Estamos fechados. Próxima abertura: {status.nextLabel}.</div>}{belowMinimum&&<div className="form-error">Pedido mínimo: {money(minimumOrder)}.</div>}{needsAddress && !deliveryAssessment.allowed && <div className="form-error">{deliveryErrorMessage}</div>}
     <button className="primary-action" type="submit" disabled={blocked}><MessageCircle size={19} />{submitting ? "Validando e salvando..." : status.open ? "Enviar para WhatsApp" : "Fechado para pedidos"}</button>
   </form></section>;
 }
 
 function LocationStatusCard({ distanceKm, assessment }) {
-  return <div className={`location-status-card ${assessment.allowed ? "success" : "warning"}`}>{assessment.allowed ? <CheckCircle2 size={24} /> : <TriangleAlert size={24} />}<div><strong>{assessment.allowed ? "Entrega disponível" : "Entrega bloqueada"}</strong><p>Distância calculada: {distanceKm.toFixed(2)} km.</p><p>{assessment.message}</p>{assessment.allowed && <p>Taxa: {money(assessment.fee)}</p>}</div></div>;
+  const external = assessment.externalDelivery;
+  return <div className={`location-status-card ${external ? "external" : assessment.allowed ? "success" : "warning"}`}>{external ? <Bike size={24}/> : assessment.allowed ? <CheckCircle2 size={24} /> : <TriangleAlert size={24} />}<div><strong>{external ? "Entrega externa necessária" : assessment.allowed ? "Entrega disponível" : "Entrega bloqueada"}</strong><p>Distância calculada: {distanceKm.toFixed(2)} km.</p><p>{assessment.message}</p>{assessment.allowed && !external && <p>Taxa: {money(assessment.fee)}</p>}</div></div>;
 }
 
 function PaymentButton({ icon, active, label, onClick }) {
   return <button type="button" className={active ? "payment selected" : "payment"} onClick={onClick}>{icon}{label}</button>;
 }
 
-function Totals({ subtotal, deliveryFee, cardFee = 0, isCardPayment = false, total, deliveryType, deliveryDistance }) {
-  return <div className="totals">{deliveryDistance && deliveryType === "entrega" && <div className="distance-line"><span>Distância calculada</span><strong>{deliveryDistance.km.toFixed(2)} km</strong></div>}<div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div><span>{deliveryType === "retirada" ? "Retirada" : "Taxa de entrega"}</span><strong>{money(deliveryFee)}</strong></div>{isCardPayment && <div><span>Taxa do cartão</span><strong>{money(cardFee)}</strong></div>}<div className="grand-total"><span>Total</span><strong>{money(total)}</strong></div></div>;
+function Totals({ subtotal, deliveryFee, cardFee = 0, isCardPayment = false, total, deliveryType, deliveryDistance, externalDelivery = false }) {
+  return <div className="totals">{deliveryDistance && deliveryType === "entrega" && <div className="distance-line"><span>Distância calculada</span><strong>{deliveryDistance.km.toFixed(2)} km</strong></div>}<div><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div><span>{deliveryType === "retirada" ? "Retirada" : externalDelivery ? "Entrega por Uber" : "Taxa de entrega"}</span><strong>{externalDelivery ? "Por conta do cliente" : money(deliveryFee)}</strong></div>{isCardPayment && <div><span>Taxa do cartão</span><strong>{money(cardFee)}</strong></div>}<div className="grand-total"><span>Total</span><strong>{money(total)}</strong></div></div>;
 }
 
 function AdminLogin({ showNotice }) {

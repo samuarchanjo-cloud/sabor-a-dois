@@ -17,6 +17,21 @@ export function evaluateDelivery(distance, ranges, settings) {
   }
 
   const roundedDistance = Math.round(distance * 100) / 100;
+  const ownDeliveryLimit = Number(settings.own_delivery_limit_km);
+  if (
+    settings.external_delivery_enabled === true &&
+    Number.isFinite(ownDeliveryLimit) &&
+    ownDeliveryLimit > 0 &&
+    roundedDistance > ownDeliveryLimit
+  ) {
+    return {
+      allowed: true,
+      fee: 0,
+      code: "EXTERNAL_DELIVERY",
+      externalDelivery: true,
+      message: `Para distâncias acima de ${ownDeliveryLimit.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} km, a entrega deverá ser realizada por Uber, solicitado por conta do cliente.`,
+    };
+  }
   const maximum = Number(settings.maximum_delivery_distance_km);
   if (!Number.isFinite(maximum) || maximum <= 0) {
     return { allowed: false, fee: 0, code: "DELIVERY_NOT_CONFIGURED", message: "A área de entrega ainda não foi configurada." };

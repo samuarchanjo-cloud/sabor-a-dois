@@ -1,75 +1,49 @@
-// Valores públicos usados apenas enquanto a migração do Supabase ainda não foi aplicada.
-// Após a migração, app_settings, categories e business_hours são a fonte oficial.
+// Valores neutros mantêm o painel acessível antes da configuração inicial.
+// Em uma instalação normal, as tabelas do Supabase são a fonte oficial.
 export const PUBLIC_FALLBACKS = {
-  store_name: "Rafa, tô com fome",
-  whatsapp_number: "5521981720710",
-  pix_key: "43577769000180",
-  pix_name: "Rafaela Sardinha Ferreira",
-  pix_qr_code_url:
-    "https://res.cloudinary.com/ddc8f5ani/image/upload/f_auto,q_auto/qrcode-pix_1_rilq1x",
-  brand_logo_url: "https://res.cloudinary.com/ddc8f5ani/image/upload/f_auto,q_auto/logo_fih38z",
-  brand_hero_url:
-    "https://res.cloudinary.com/ddc8f5ani/image/upload/f_auto,q_auto/banner_principal_ubjelk",
+  id: "global",
+  setup_completed: false,
+  store_name: "Meu estabelecimento",
+  store_description: "",
+  whatsapp_number: "",
+  pix_enabled: false,
+  pix_key: "",
+  pix_name: "",
+  pix_qr_code_url: "",
+  cash_enabled: false,
+  credit_card_enabled: false,
+  debit_card_enabled: false,
+  brand_logo_url: "",
+  brand_hero_url: "",
+  theme_primary_color: "#c50e0c",
+  theme_secondary_color: "#ffc107",
+  theme_background_color: "#050505",
+  theme_surface_color: "#121212",
+  theme_text_color: "#ffffff",
   timezone: "America/Sao_Paulo",
-  store_latitude: -22.943800658459434,
-  store_longitude: -43.582438704219854,
+  store_postal_code: "",
+  store_street: "",
+  store_number: "",
+  store_complement: "",
+  store_neighborhood: "",
+  store_city: "",
+  store_state: "",
+  store_latitude: null,
+  store_longitude: null,
   below_one_km_behavior: "blocked",
   below_one_km_fee: null,
   maximum_delivery_distance_km: null,
-  card_fee_percent: 5,
+  own_delivery_limit_km: null,
+  external_delivery_enabled: false,
+  minimum_order_value: 0,
+  card_fee_percent: 0,
 };
 
-export const FALLBACK_CATEGORIES = [
-  {
-    id: "combos",
-    name: "Combos",
-    banner_url: "https://res.cloudinary.com/ddc8f5ani/image/upload/f_auto,q_auto/banner_combos_opyqqk",
-    description: "As melhores combinações para matar a fome.",
-    sort_order: 1,
-    active: true,
-  },
-  {
-    id: "hamburgueres",
-    name: "Hambúrgueres",
-    banner_url:
-      "https://res.cloudinary.com/ddc8f5ani/image/upload/f_auto,q_auto/banne_hamburguer_oev7ts",
-    description: "Montados do jeito que a fome merece.",
-    sort_order: 2,
-    active: true,
-  },
-  {
-    id: "pasteis",
-    name: "Pastéis",
-    banner_url: "https://res.cloudinary.com/ddc8f5ani/image/upload/f_auto,q_auto/banner_pasteis_svicgt",
-    description: "Crocantes por fora, recheados por dentro.",
-    sort_order: 3,
-    active: true,
-  },
-  {
-    id: "porcoes",
-    name: "Porções",
-    banner_url:
-      "https://res.cloudinary.com/ddc8f5ani/image/upload/f_auto,q_auto/banner_por%C3%A7%C3%B5es_ultb2k",
-    description: "Perfeitas para compartilhar.",
-    sort_order: 4,
-    active: true,
-  },
-  {
-    id: "bebidas",
-    name: "Bebidas",
-    banner_url: "https://res.cloudinary.com/ddc8f5ani/image/upload/f_auto,q_auto/BANNER_BEBIDAS_gxdtxj",
-    description: "A companhia perfeita para seu pedido.",
-    sort_order: 5,
-    active: true,
-  },
-];
+export const FALLBACK_CATEGORIES = [];
 
-export const FALLBACK_BUSINESS_HOURS = [
-  { day_of_week: 0, is_open: true, opening_time: "19:00", closing_time: "23:00" },
-  { day_of_week: 1, is_open: false, opening_time: null, closing_time: null },
-  { day_of_week: 2, is_open: false, opening_time: null, closing_time: null },
-  { day_of_week: 3, is_open: true, opening_time: "19:00", closing_time: "23:00" },
-  { day_of_week: 4, is_open: true, opening_time: "19:00", closing_time: "23:00" },
-  { day_of_week: 5, is_open: true, opening_time: "19:00", closing_time: "23:00" },
-  { day_of_week: 6, is_open: true, opening_time: "19:00", closing_time: "23:00" },
-];
+export const FALLBACK_BUSINESS_HOURS = Array.from({ length: 7 }, (_, day) => ({
+  day_of_week: day,
+  is_open: false,
+  opening_time: null,
+  closing_time: null,
+}));

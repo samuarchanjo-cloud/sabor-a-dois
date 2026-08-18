@@ -1,7 +1,11 @@
 import { supabase } from "./supabase";
 import { FALLBACK_BUSINESS_HOURS, FALLBACK_CATEGORIES, PUBLIC_FALLBACKS } from "../menuData";
 
-const PRODUCTS_BUCKET = "product-images";
+const IMAGE_BUCKETS = {
+  product: "product-images",
+  category: "category-images",
+  brand: "brand-images",
+};
 
 function isMissingTable(error) {
   return error?.code === "PGRST205" || error?.code === "42P01";
@@ -35,7 +39,7 @@ export async function loadStoreData() {
 
   if (productsResult.error) throw productsResult.error;
   const useFallback = (result, label, fallback) => {
-    if (!result.error) return result.data?.length ? result.data : fallback;
+    if (!result.error) return result.data || fallback;
     if (isMissingTable(result.error)) {
       setupWarnings.push(`${label} ainda não existe no Supabase.`);
       return fallback;
@@ -123,6 +127,12 @@ function productPayload(product) {
   };
 }
 
+function nullableNumber(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 export async function saveProduct(product, isNew) {
   const query = isNew
     ? supabase.from("products").insert(productPayload(product))
@@ -191,53 +201,81 @@ export async function deleteDeliveryRange(rangeId) {
 export async function saveSettings(settings) {
   const payload = {
     id: "global",
-    store_name: settings.store_name,
-    whatsapp_number: settings.whatsapp_number,
-    pix_key: settings.pix_key,
-    pix_name: settings.pix_name,
-    pix_qr_code_url: settings.pix_qr_code_url,
-    brand_logo_url: settings.brand_logo_url,
-    brand_hero_url: settings.brand_hero_url,
+    setup_completed: Boolean(settings.setup_completed),
+    store_name: settings.store_name?.trim() || "Meu estabelecimento",
+    store_description: settings.store_description?.trim() || "",
+    whatsapp_number: String(settings.whatsapp_number || "").replace(/\D/g, ""),
+    pix_enabled: Boolean(settings.pix_enabled),
+    pix_key: settings.pix_key?.trim() || "",
+    pix_name: settings.pix_name?.trim() || "",
+    pix_qr_code_url: settings.pix_qr_code_url?.trim() || "",
+    cash_enabled: Boolean(settings.cash_enabled),
+    credit_card_enabled: Boolean(settings.credit_card_enabled),
+    debit_card_enabled: Boolean(settings.debit_card_enabled),
+    brand_logo_url: settings.brand_logo_url?.trim() || "",
+    brand_hero_url: settings.brand_hero_url?.trim() || "",
+    theme_primary_color: settings.theme_primary_color,
+    theme_secondary_color: settings.theme_secondary_color,
+    theme_background_color: settings.theme_background_color,
+    theme_surface_color: settings.theme_surface_color,
+    theme_text_color: settings.theme_text_color,
     timezone: settings.timezone || "America/Sao_Paulo",
-    store_latitude: Number(settings.store_latitude),
-    store_longitude: Number(settings.store_longitude),
+    store_postal_code: settings.store_postal_code?.trim() || "",
+    store_street: settings.store_street?.trim() || "",
+    store_number: settings.store_number?.trim() || "",
+    store_complement: settings.store_complement?.trim() || "",
+    store_neighborhood: settings.store_neighborhood?.trim() || "",
+    store_city: settings.store_city?.trim() || "",
+    store_state: settings.store_state?.trim().toUpperCase() || "",
+    store_latitude: nullableNumber(settings.store_latitude),
+    store_longitude: nullableNumber(settings.store_longitude),
     below_one_km_behavior: settings.below_one_km_behavior,
     below_one_km_fee:
       settings.below_one_km_behavior === "fixed" ? Number(settings.below_one_km_fee) : null,
-    maximum_delivery_distance_km: settings.maximum_delivery_distance_km
-      ? Number(settings.maximum_delivery_distance_km)
-      : null,
+    maximum_delivery_distance_km: nullableNumber(settings.maximum_delivery_distance_km),
+    own_delivery_limit_km: nullableNumber(settings.own_delivery_limit_km),
+    external_delivery_enabled: Boolean(settings.external_delivery_enabled),
+    minimum_order_value: Number(settings.minimum_order_value) || 0,
     card_fee_percent: Number(settings.card_fee_percent) || 0,
   };
   const { error } = await supabase.from("app_settings").upsert(payload, { onConflict: "id" });
   if (error) throw error;
 }
 
-export function imageStoragePath(publicUrl) {
-  const marker = `/storage/v1/object/public/${PRODUCTS_BUCKET}/`;
+export function imageStoragePath(publicUrl, bucket) {
+  const marker = `/storage/v1/object/public/${bucket}/`;
   const index = String(publicUrl || "").indexOf(marker);
   return index >= 0 ? decodeURIComponent(publicUrl.slice(index + marker.length)) : null;
 }
 
-export async function uploadProductImage(file) {
+async function uploadImage(file, kind) {
+  const bucket = IMAGE_BUCKETS[kind];
   const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
   const path = `${new Date().getFullYear()}/${crypto.randomUUID()}.${extension}`;
-  const { error } = await supabase.storage.from(PRODUCTS_BUCKET).upload(path, file, {
+  const { error } = await supabase.storage.from(bucket).upload(path, file, {
     cacheControl: "3600",
     contentType: file.type,
     upsert: false,
   });
   if (error) throw error;
-  const { data } = supabase.storage.from(PRODUCTS_BUCKET).getPublicUrl(path);
-  return { url: data.publicUrl, path };
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return { url: data.publicUrl, path, bucket };
 }
 
-export async function removeProductImage(publicUrl) {
-  const path = imageStoragePath(publicUrl);
+async function removeImage(publicUrl, kind) {
+  const bucket = IMAGE_BUCKETS[kind];
+  const path = imageStoragePath(publicUrl, bucket);
   if (!path) return;
-  const { error } = await supabase.storage.from(PRODUCTS_BUCKET).remove([path]);
+  const { error } = await supabase.storage.from(bucket).remove([path]);
   if (error) throw error;
 }
+
+export const uploadProductImage = (file) => uploadImage(file, "product");
+export const removeProductImage = (url) => removeImage(url, "product");
+export const uploadCategoryImage = (file) => uploadImage(file, "category");
+export const removeCategoryImage = (url) => removeImage(url, "category");
+export const uploadBrandImage = (file) => uploadImage(file, "brand");
+export const removeBrandImage = (url) => removeImage(url, "brand");
 
 export async function placeOrder(payload) {
   const { data, error } = await supabase.rpc("place_order", { p_order: payload });

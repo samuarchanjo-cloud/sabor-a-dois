@@ -1,10 +1,7 @@
-.vercel
-.env*
-
-.env.local
-.vercel
-
 node_modules/
-.env.local
-.vercel/
 dist/
+.vercel/
+.env
+.env.*
+!.env.example
+*.log
