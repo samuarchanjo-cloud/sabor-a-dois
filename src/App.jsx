@@ -35,6 +35,7 @@ import {
 import { getBusinessStatus } from "./lib/businessHours";
 import { distanceInKm, evaluateDelivery } from "./lib/delivery";
 import { pathForView, routeFromPath } from "./lib/navigation";
+import { whatsappOrderUrl } from "./lib/whatsapp";
 import {
   checkIsAdmin,
   getSession,
@@ -270,6 +271,8 @@ function App() {
     setMeta('meta[property="og:title"]', settings.store_name || "Cardápio digital");
     setMeta('meta[property="og:description"]', description);
     setMeta('meta[property="og:image"]', settings.brand_hero_url || settings.brand_logo_url || "");
+    const favicon = document.querySelector('link[rel="icon"]');
+    if (favicon) favicon.href = settings.brand_logo_url || "/favicon.svg";
     const manifest = document.querySelector('link[rel="manifest"]');
     if (manifest) {
       const data = {
@@ -533,7 +536,8 @@ function App() {
         items: cartLines.map((item) => ({ product_id: item.id, quantity: item.qty })),
       });
       if (!store.settings.whatsapp_number) throw new Error("O WhatsApp do estabelecimento ainda não foi configurado.");
-      const url = `https://wa.me/${store.settings.whatsapp_number}?text=${encodeURIComponent(buildWhatsappMessage(order))}`;
+      const url = whatsappOrderUrl(store.settings.whatsapp_number, buildWhatsappMessage(order));
+      if (!url) throw new Error("O número do WhatsApp precisa ter DDI e DDD válidos.");
       setCart([]);
       showNotice("Pedido salvo. Abrindo o WhatsApp...", "success");
       window.location.assign(url);
@@ -615,7 +619,7 @@ function App() {
       <nav className="bottom-nav">
         <button className={view === "home" ? "active" : ""} onClick={() => navigate("home")}><Home size={21} /><span>Início</span></button>
         <button className={view === "category" ? "active" : ""} onClick={openCategories}><Grid2X2 size={21} /><span>Categorias</span></button>
-        <button className={view === "cart" || view === "checkout" ? "active cart-nav-button" : "cart-nav-button"} onClick={() => navigate("cart")}><span className="nav-icon"><ShoppingCart size={23} />{cartCount > 0 && <b>{cartCount}</b>}</span><span>Carrinho</span></button>
+        <button className={`${view === "cart" || view === "checkout" ? "active " : ""}cart-nav-button${cartCount > 0 && view !== "cart" && view !== "checkout" ? " has-items" : ""}`} onClick={() => navigate("cart")}><span className="nav-icon"><ShoppingCart size={23} />{cartCount > 0 && <b>{cartCount}</b>}</span><span>Carrinho</span></button>
         <button className={view === "admin" ? "active" : ""} onClick={() => navigate("admin")}><Settings size={21} /><span>Admin</span></button>
       </nav>
     </div>
@@ -676,7 +680,7 @@ function CheckoutView({ cartLines, subtotal, deliveryFee, cardFee, isCardPayment
     </>}
     <div className="option-group"><span>Forma de pagamento</span><div className="payment-list">{availablePayments.map((method)=>{const Icon=method.icon;return <PaymentButton key={method.id} icon={<Icon size={18}/>} active={checkout.payment===method.id} label={method.label} onClick={()=>setCheckoutField("payment",method.id)}/>;})}</div>{availablePayments.length===0&&<small className="address-helper error">Nenhuma forma de pagamento configurada.</small>}</div>
     {checkout.payment === "dinheiro" && <div className="option-group change-option"><span>Precisa de troco?</span><div className="segmented"><button type="button" className={!checkout.needsChange ? "selected" : ""} onClick={() => setCheckoutField("needsChange", false)}>Não</button><button type="button" className={checkout.needsChange ? "selected" : ""} onClick={() => setCheckoutField("needsChange", true)}>Sim</button></div>{checkout.needsChange && <label>Troco para quanto?<input inputMode="decimal" placeholder="R$ 100,00" value={checkout.changeFor} onBlur={() => setCheckoutField("changeFor", moneyFromInput(checkout.changeFor))} onChange={(event) => setCheckoutField("changeFor", event.target.value)} /></label>}</div>}
-    {checkout.payment === "pix" && settings.pix_enabled && <div className="pix-box">{settings.pix_qr_code_url&&<img className="pix-qr" src={settings.pix_qr_code_url} alt="QR Code Pix" loading="lazy" decoding="async" />}<div><strong>Pix</strong><p>Nome: {settings.pix_name}</p><p>{settings.pix_key}</p><button type="button" className="copy-pix-button" onClick={copyPixKey}>Copiar chave Pix</button>{pixCopyStatus && <span className="pix-copy-status">{pixCopyStatus}</span>}<small>Envie o pedido antes de pagar e encaminhe o comprovante pelo WhatsApp.</small></div></div>}
+    {checkout.payment === "pix" && settings.pix_enabled && <div className="pix-box"><div className="pix-visual">{settings.pix_qr_code_url?<img className="pix-qr" src={settings.pix_qr_code_url} alt="QR Code Pix" loading="lazy" decoding="async" />:<Wallet size={30}/>}</div><div className="pix-content"><span className="pix-label"><Wallet size={16}/>Pagamento por Pix</span><strong>{settings.pix_name}</strong><div className="pix-key"><small>Chave Pix</small><span>{settings.pix_key}</span></div><button type="button" className="copy-pix-button" onClick={copyPixKey}>{pixCopyStatus?<CheckCircle2 size={17}/>:<Wallet size={17}/>} {pixCopyStatus || "Copiar chave Pix"}</button><small className="pix-guidance">Envie o pedido antes de pagar e encaminhe o comprovante pelo WhatsApp.</small></div></div>}
     <label>Observação do pedido<textarea value={checkout.notes} onChange={(event) => setCheckoutField("notes", event.target.value)} /></label><div className="mini-order"><strong>{cartLines.length} item(ns) no pedido</strong><Totals subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} deliveryType={checkout.deliveryType} deliveryDistance={deliveryLocation} externalDelivery={deliveryAssessment.externalDelivery} /></div>
     {!status.open && <div className="form-error">Estamos fechados. Próxima abertura: {status.nextLabel}.</div>}{belowMinimum&&<div className="form-error">Pedido mínimo: {money(minimumOrder)}.</div>}{needsAddress && !deliveryAssessment.allowed && <div className="form-error">{deliveryErrorMessage}</div>}
     <button className="primary-action" type="submit" disabled={blocked}><MessageCircle size={19} />{submitting ? "Validando e salvando..." : status.open ? "Enviar para WhatsApp" : "Fechado para pedidos"}</button>

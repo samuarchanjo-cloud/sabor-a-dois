@@ -40,15 +40,15 @@ export function evaluateDelivery(distance, ranges, settings) {
     return { allowed: false, fee: 0, code: "OUTSIDE_AREA", message: `Endereço fora da área máxima de ${maximum.toFixed(2)} km.` };
   }
 
-  if (roundedDistance < 1) {
+  if (roundedDistance <= 1) {
     const behavior = settings.below_one_km_behavior;
-    if (behavior === "free") return { allowed: true, fee: 0, code: "FREE", message: "Entrega grátis abaixo de 1 km." };
+    if (behavior === "free") return { allowed: true, fee: 0, code: "FREE", message: "Entrega grátis até 1 km." };
     if (behavior === "fixed") {
       const fee = Number(settings.below_one_km_fee);
-      if (Number.isFinite(fee) && fee >= 0) return { allowed: true, fee, code: "FIXED", message: "Taxa fixa abaixo de 1 km." };
-      return { allowed: false, fee: 0, code: "DELIVERY_NOT_CONFIGURED", message: "A taxa abaixo de 1 km ainda não foi definida." };
+      if (Number.isFinite(fee) && fee >= 0) return { allowed: true, fee, code: "FIXED", message: "Taxa fixa até 1 km." };
+      return { allowed: false, fee: 0, code: "DELIVERY_NOT_CONFIGURED", message: "A taxa até 1 km ainda não foi definida." };
     }
-    return { allowed: false, fee: 0, code: "BELOW_ONE_BLOCKED", message: "Pedidos abaixo de 1 km estão bloqueados para entrega." };
+    return { allowed: false, fee: 0, code: "BELOW_ONE_BLOCKED", message: "Pedidos de até 1 km estão bloqueados para entrega." };
   }
 
   const range = (ranges || []).find(

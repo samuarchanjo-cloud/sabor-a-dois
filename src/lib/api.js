@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { FALLBACK_BUSINESS_HOURS, FALLBACK_CATEGORIES, PUBLIC_FALLBACKS } from "../menuData";
+import { normalizeWhatsappNumber } from "./whatsapp";
 
 const IMAGE_BUCKETS = {
   product: "product-images",
@@ -215,7 +216,7 @@ export async function saveSettings(settings) {
     setup_completed: Boolean(settings.setup_completed),
     store_name: settings.store_name?.trim() || "Meu estabelecimento",
     store_description: settings.store_description?.trim() || "",
-    whatsapp_number: String(settings.whatsapp_number || "").replace(/\D/g, ""),
+    whatsapp_number: normalizeWhatsappNumber(settings.whatsapp_number),
     pix_enabled: Boolean(settings.pix_enabled),
     pix_key: settings.pix_key?.trim() || "",
     pix_name: settings.pix_name?.trim() || "",

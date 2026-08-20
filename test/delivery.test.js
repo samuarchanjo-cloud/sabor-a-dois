@@ -23,6 +23,16 @@ test("aplica taxa fixa abaixo de 1 km e faixa acima", () => {
   assert.deepEqual(evaluateDelivery(2.5, ranges, settings).fee, 7);
 });
 
+test("aceita a regra configurada quando a distância arredonda para 1 km", () => {
+  assert.deepEqual(evaluateDelivery(0.999, ranges, settings), {
+    allowed: true,
+    fee: 2,
+    code: "FIXED",
+    message: "Taxa fixa até 1 km.",
+  });
+  assert.equal(evaluateDelivery(1, ranges, settings).allowed, true);
+});
+
 test("bloqueia fora do raio e detecta lacunas", () => {
   assert.equal(evaluateDelivery(5.01, ranges, settings).allowed, false);
   assert.match(validateDeliveryRanges([

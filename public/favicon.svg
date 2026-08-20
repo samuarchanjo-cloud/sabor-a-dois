@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Sabor a Dois">
+  <rect width="64" height="64" rx="16" fill="#080808"/>
+  <path d="M34 8c2 9-5 12-2 19 2-4 7-6 8-12 7 7 12 14 12 23 0 12-9 20-20 20S12 50 12 38c0-10 6-18 15-26-1 8 3 11 5 15 4-6 3-12 2-19Z" fill="#ff5a1f"/>
+  <path d="M32 31c5 5 8 9 8 14a8 8 0 0 1-16 0c0-5 3-9 8-14Z" fill="#fff"/>
+</svg>
