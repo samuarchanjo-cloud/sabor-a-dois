@@ -7,6 +7,8 @@ const IMAGE_BUCKETS = {
   brand: "brand-images",
 };
 
+let storeDataRequest = null;
+
 function isMissingTable(error) {
   return error?.code === "PGRST205" || error?.code === "42P01";
 }
@@ -27,7 +29,7 @@ function normalizeProduct(product) {
   };
 }
 
-export async function loadStoreData() {
+async function fetchStoreData() {
   const setupWarnings = [];
   const [productsResult, categoriesResult, hoursResult, rangesResult, settingsResult] = await Promise.all([
     supabase.from("products").select("*").order("sort_order", { ascending: true }).order("name"),
@@ -125,6 +127,15 @@ function productPayload(product) {
     featured: Boolean(product.featured),
     sort_order: Number(product.sort_order) || 0,
   };
+}
+
+export function loadStoreData() {
+  if (!storeDataRequest) {
+    storeDataRequest = fetchStoreData().finally(() => {
+      storeDataRequest = null;
+    });
+  }
+  return storeDataRequest;
 }
 
 function nullableNumber(value) {

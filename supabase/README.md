@@ -1,6 +1,6 @@
 # Supabase do template
 
-Use um projeto Supabase novo para cada estabelecimento. A migration em `migrations/20260816000000_cardapio_template_base.sql` cria toda a infraestrutura em um banco vazio. Em seguida, `migrations/20260818000000_sabor_a_dois.sql` aplica a identidade inicial e a regra configurável de entrega externa deste projeto:
+Use um projeto Supabase novo para cada estabelecimento. A migration em `migrations/20260816000000_cardapio_template_base.sql` cria toda a infraestrutura em um banco vazio. Em seguida, `migrations/20260818000000_sabor_a_dois.sql` aplica a identidade inicial e a regra configurável de entrega externa deste projeto. A migration incremental `migrations/20260820000000_products_seed_safe.sql` cadastra, sem duplicar, somente os 12 produtos iniciais solicitados.
 
 - tabelas `products`, `categories`, `business_hours`, `delivery_fee_ranges`, `app_settings`, `app_admins`, `orders` e `order_items`;
 - índices, relacionamentos, constraints e triggers de `updated_at`;
@@ -22,7 +22,7 @@ npx supabase@latest link --project-ref SEU_PROJECT_REF
 npx supabase@latest db push
 ```
 
-Depois rode `verification.sql` no SQL Editor.
+Depois rode `verification.sql` e `verify_product_seed.sql` no SQL Editor.
 
 ## Primeiro administrador
 

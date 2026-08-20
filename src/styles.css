@@ -2685,3 +2685,238 @@ main {
     min-height: 66px;
   }
 }
+
+/* Auditoria mobile: contenção de largura, safe areas e controles administrativos */
+body {
+  width: 100%;
+  min-width: 0;
+}
+
+#root,
+.app-shell,
+.admin-shell,
+main,
+.admin-view,
+.admin-section,
+.admin-editor,
+.checkout-form,
+.cart-view,
+.categories-view,
+.products-view {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.app-shell {
+  padding-bottom: calc(108px + env(safe-area-inset-bottom));
+}
+
+.home-view {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.home-view > *,
+.delivery-address-card,
+.hero,
+.category-section,
+.featured-section {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-editor label,
+.checkout-form label,
+.field-row > *,
+.brand-upload-grid > *,
+.color-grid > *,
+.payment-admin-grid > *,
+.admin-session-bar > div,
+.admin-section-title > div,
+.admin-product-row > div,
+.category-admin-row > div,
+.fee-row > div {
+  min-width: 0;
+}
+
+.admin-editor input:not([type="checkbox"]):not([type="color"]),
+.admin-editor select,
+.admin-editor textarea,
+.admin-login input,
+.checkout-form input,
+.checkout-form select,
+.checkout-form textarea,
+.upload-field input[type="file"] {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.admin-editor input[readonly] {
+  color: var(--muted);
+  cursor: default;
+}
+
+.upload-field {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.upload-field input[type="file"] {
+  overflow: hidden;
+  padding: 8px 0;
+  text-overflow: ellipsis;
+}
+
+.admin-session-bar small,
+.admin-section-title,
+.admin-product-row,
+.category-admin-row,
+.fee-row,
+.orders-list,
+.pix-box,
+.selected-file {
+  overflow-wrap: anywhere;
+}
+
+.admin-tabs,
+.category-tabs,
+.category-rail,
+.featured-rail {
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 720px) {
+  .admin-section-title,
+  .editor-heading,
+  .order-heading {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .admin-section-title > .admin-primary {
+    width: 100%;
+  }
+
+  .admin-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-product-row,
+  .category-admin-row {
+    overflow: hidden;
+  }
+
+  .admin-product-row .row-actions,
+  .category-admin-row .row-actions {
+    width: 100%;
+  }
+
+  .fee-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .fee-row .row-actions button:first-child {
+    flex: 1;
+  }
+
+  .hours-row label,
+  .postal-lookup > *,
+  .payment-admin-grid > *,
+  .brand-upload-grid > *,
+  .color-grid > * {
+    width: 100%;
+  }
+}
+
+@media (max-width: 430px) {
+  .topbar {
+    gap: 8px;
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .brand-copy strong,
+  .brand-copy small {
+    max-width: 100%;
+  }
+
+  .admin-session-bar {
+    align-items: flex-start;
+  }
+
+  .admin-session-bar button {
+    flex: 0 0 auto;
+  }
+
+  .bottom-nav {
+    width: calc(100% - 12px);
+  }
+
+  .bottom-nav button {
+    min-width: 0;
+    padding-inline: 2px;
+    font-size: 0.66rem;
+  }
+}
+
+@media (max-width: 340px) {
+  main {
+    padding-right: 9px;
+    padding-left: 9px;
+  }
+
+  .brand-mark,
+  .brand-lockup > img {
+    display: none;
+  }
+
+  .brand-copy strong {
+    font-size: 1.14rem;
+  }
+
+  .brand-copy small {
+    font-size: 0.61rem;
+  }
+
+  .admin-shortcut {
+    min-width: 44px;
+    min-height: 50px;
+  }
+
+  .product-grid {
+    gap: 7px;
+  }
+
+  .product-info {
+    padding: 8px;
+  }
+
+  .product-name {
+    font-size: 0.78rem;
+  }
+
+  .price-block strong {
+    font-size: 0.8rem;
+  }
+
+  .bottom-nav button {
+    font-size: 0.61rem;
+  }
+
+  .category-tabs,
+  .admin-tabs {
+    width: 100%;
+    max-width: 100%;
+    margin-right: 0;
+    margin-left: 0;
+    padding-right: 0;
+    padding-left: 0;
+  }
+}

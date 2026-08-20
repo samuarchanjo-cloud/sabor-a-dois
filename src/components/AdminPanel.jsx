@@ -43,6 +43,7 @@ import {
 import { formatPostalCode, geocodeDeliveryAddress, lookupPostalCode, postalCodeDigits } from "../lib/address";
 import { DAY_NAMES } from "../lib/businessHours";
 import { validateDeliveryRanges } from "../lib/delivery";
+import { slugify, uniqueProductId } from "../lib/productIds";
 
 const TABS = [
   ["overview", "Visão geral", LayoutDashboard],
@@ -56,16 +57,6 @@ const TABS = [
   ["products", "Produtos", PackageCheck],
   ["orders", "Pedidos", ShoppingBag],
 ];
-
-function slugify(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
 
 function money(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value) || 0);
@@ -290,7 +281,7 @@ function ProductManager({ products, categories, reloadStore, showNotice }) {
     setDraft((current) => ({
       ...current,
       [field]: value,
-      ...(isNew && field === "name" && !current.id ? { id: slugify(value) } : {}),
+      ...(isNew && field === "name" ? { id: uniqueProductId(value, products) } : {}),
     }));
     setDirty(true);
   }
@@ -369,10 +360,10 @@ function ProductManager({ products, categories, reloadStore, showNotice }) {
             <h3>{isNew ? "Novo produto" : `Editar ${draft.name}`}</h3>
             <button type="button" onClick={() => confirmDiscard() && setDraft(null)} aria-label="Fechar"><X size={19} /></button>
           </div>
-          <div className="product-preview">{filePreview || draft.image ? <img src={filePreview || draft.image} alt="Prévia do produto" /> : <span className="admin-thumb-placeholder"><PackageCheck size={28}/></span>}</div>
+          <div className="product-preview">{filePreview || draft.image ? <img src={filePreview || draft.image} alt="Prévia do produto" loading="lazy" decoding="async" /> : <span className="admin-thumb-placeholder"><PackageCheck size={28}/></span>}</div>
           <div className="field-row">
             <label>Nome<input required value={draft.name} onChange={(event) => change("name", event.target.value)} /></label>
-            <label>Identificador<input required disabled={!isNew} value={draft.id} onChange={(event) => change("id", slugify(event.target.value))} /></label>
+            <label>Identificador gerado<input required readOnly value={draft.id} /></label>
           </div>
           <label>Descrição<textarea value={draft.description} onChange={(event) => change("description", event.target.value)} /></label>
           <div className="field-row three">
@@ -401,7 +392,7 @@ function ProductManager({ products, categories, reloadStore, showNotice }) {
       <div className="admin-product-list">
         {filtered.map((product) => (
           <article key={product.id} className="admin-product-row">
-            {product.image ? <img src={product.image} alt="" /> : <span className="admin-thumb-placeholder"><PackageCheck size={22}/></span>}
+            {product.image ? <img src={product.image} alt="" loading="lazy" decoding="async" /> : <span className="admin-thumb-placeholder"><PackageCheck size={22}/></span>}
             <div><strong>{product.name}</strong><span>{categories.find((item) => item.id === product.category)?.name || product.category} · {money(product.price)}</span><small>{product.status} · {product.visible === false ? "Oculto" : "Visível"}{product.featured ? " · Destaque" : ""}</small></div>
             <div className="row-actions"><button type="button" onClick={() => startEdit(product)}>Editar</button><button className="danger" type="button" onClick={() => remove(product)}><Trash2 size={16} /></button></div>
           </article>
@@ -422,7 +413,7 @@ function CategoryManager({ categories, reloadStore, showNotice }) {
     setFile(null);
     setDraft(category ? { ...category } : { id: "", name: "", description: "", banner_url: "", sort_order: categories.length + 1, active: true });
   };
-  const change = (field, value) => setDraft((current) => ({ ...current, [field]: value, ...(!current.id && field === "name" ? { id: slugify(value) } : {}) }));
+  const change = (field, value) => setDraft((current) => ({ ...current, [field]: value, ...(isNew && field === "name" ? { id: slugify(value) } : {}) }));
   async function submit(event) {
     event.preventDefault();
     if (saving) return;
@@ -443,7 +434,7 @@ function CategoryManager({ categories, reloadStore, showNotice }) {
       <div className="admin-section-title"><div><h2>Categorias</h2><span>Organização do cardápio</span></div><button className="admin-primary" type="button" onClick={() => start()}><Plus size={17} /> Nova categoria</button></div>
       {draft && <form className="admin-editor" onSubmit={submit}>
         <div className="editor-heading"><h3>{isNew ? "Nova categoria" : "Editar categoria"}</h3><button type="button" onClick={() => setDraft(null)}><X size={19} /></button></div>
-        {draft.banner_url && <div className="category-preview"><img src={draft.banner_url} alt="Prévia" /></div>}
+        {draft.banner_url && <div className="category-preview"><img src={draft.banner_url} alt="Prévia" loading="lazy" decoding="async" /></div>}
         <div className="field-row"><label>Nome<input required value={draft.name} onChange={(event) => change("name", event.target.value)} /></label><label>Identificador<input disabled={!isNew} required value={draft.id} onChange={(event) => change("id", slugify(event.target.value))} /></label></div>
         <label>Descrição<textarea value={draft.description} onChange={(event) => change("description", event.target.value)} /></label>
         <label className="upload-field"><ImagePlus size={20}/>Enviar banner da galeria (JPG, PNG ou WEBP, até 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event)=>{const selected=event.target.files?.[0];const message=imageFileError(selected);if(message){showNotice(message,"error");event.target.value="";return;}setFile(selected);}}/></label>
@@ -452,7 +443,7 @@ function CategoryManager({ categories, reloadStore, showNotice }) {
         <div className="field-row"><label>Ordem<input type="number" min="0" value={draft.sort_order} onChange={(event) => change("sort_order", event.target.value)} /></label><label className="admin-check"><input type="checkbox" checked={draft.active !== false} onChange={(event) => change("active", event.target.checked)} /> Categoria ativa</label></div>
         <button className="admin-primary wide" disabled={saving}><Save size={17} /> {saving ? "Salvando..." : "Salvar categoria"}</button>
       </form>}
-      <div className="admin-card-list">{categories.map((category) => <article className="category-admin-row" key={category.id}>{category.banner_url ? <img src={category.banner_url} alt="" /> : <span className="admin-thumb-placeholder"><Tags size={22}/></span>}<div><strong>{category.name}</strong><span>Ordem {category.sort_order} · {category.active ? "Ativa" : "Oculta"}</span></div><div className="row-actions"><button type="button" onClick={() => start(category)}>Editar</button><button className="danger" type="button" onClick={() => remove(category)}><Trash2 size={16} /></button></div></article>)}</div>
+      <div className="admin-card-list">{categories.map((category) => <article className="category-admin-row" key={category.id}>{category.banner_url ? <img src={category.banner_url} alt="" loading="lazy" decoding="async" /> : <span className="admin-thumb-placeholder"><Tags size={22}/></span>}<div><strong>{category.name}</strong><span>Ordem {category.sort_order} · {category.active ? "Ativa" : "Oculta"}</span></div><div className="row-actions"><button type="button" onClick={() => start(category)}>Editar</button><button className="danger" type="button" onClick={() => remove(category)}><Trash2 size={16} /></button></div></article>)}</div>
     </div>
   );
 }

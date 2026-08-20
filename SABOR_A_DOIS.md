@@ -8,7 +8,9 @@ Em um Supabase novo, aplique as migrations na ordem:
 
 1. `supabase/migrations/20260816000000_cardapio_template_base.sql`
 2. `supabase/migrations/20260818000000_sabor_a_dois.sql`
-3. `supabase/verification.sql`
+3. `supabase/migrations/20260820000000_products_seed_safe.sql`
+4. `supabase/verification.sql`
+5. `supabase/verify_product_seed.sql`
 
 A segunda migration:
 
@@ -37,3 +39,9 @@ Com **Acima do limite: entrega externa por conta do cliente** habilitado, distâ
 - ficam identificadas em `orders.external_delivery` e na mensagem do WhatsApp.
 
 Se o modo for desabilitado, volta a valer a distância máxima convencional e o bloqueio fora da área.
+
+## Correção do cadastro de produtos
+
+O formulário antigo fixava o ID na primeira letra digitada. O primeiro produto “Frango Assado com Farofa” ficou com ID `f`; o segundo nome iniciado por F tentava reutilizar a mesma chave primária. O banco nunca teve limite global de um produto e a relação continua sendo uma categoria para muitos produtos.
+
+A migration `20260820000000_products_seed_safe.sql` é incremental e idempotente. Ela altera somente os 12 produtos solicitados, preserva imagens e estados dos produtos já existentes e não escreve em configurações, categorias, horários, taxas, pagamentos ou endereço.

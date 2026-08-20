@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Bike,
@@ -23,7 +23,6 @@ import {
   Trash2,
   Wallet,
 } from "lucide-react";
-import AdminPanel from "./components/AdminPanel";
 import { FALLBACK_BUSINESS_HOURS, FALLBACK_CATEGORIES, PUBLIC_FALLBACKS } from "./menuData";
 import {
   composeDeliveryAddress,
@@ -35,6 +34,7 @@ import {
 } from "./lib/address";
 import { getBusinessStatus } from "./lib/businessHours";
 import { distanceInKm, evaluateDelivery } from "./lib/delivery";
+import { pathForView, routeFromPath } from "./lib/navigation";
 import {
   checkIsAdmin,
   getSession,
@@ -45,6 +45,8 @@ import {
   signOut,
   subscribeToStoreChanges,
 } from "./lib/api";
+
+const AdminPanel = lazy(() => import("./components/AdminPanel"));
 
 const STORAGE_KEY = "digital-menu-cart-v1";
 const DELIVERY_ADDRESS_FIELDS = new Set(["postalCode", "street", "number", "complement", "neighborhood", "city", "state", "reference"]);
@@ -116,8 +118,8 @@ function App() {
   const [store, setStore] = useState(EMPTY_STORE);
   const [loadingStore, setLoadingStore] = useState(true);
   const [cart, setCart] = useState(readCart);
-  const [view, setView] = useState(() => window.location.pathname === "/admin" ? "admin" : "home");
-  const [activeCategory, setActiveCategory] = useState(null);
+  const [view, setView] = useState(() => routeFromPath(window.location.pathname).view);
+  const [activeCategory, setActiveCategory] = useState(() => routeFromPath(window.location.pathname).categoryId);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState(null);
   const [now, setNow] = useState(() => new Date());
@@ -154,6 +156,28 @@ function App() {
     setNotice({ message, type });
     window.setTimeout(() => setNotice(null), 4200);
   }, []);
+
+  const navigate = useCallback((nextView, { categoryId = null, replace = false } = {}) => {
+    const nextPath = pathForView(nextView, categoryId);
+    const currentDepth = Number(window.history.state?.menuDepth) || 0;
+    if (window.location.pathname !== nextPath) {
+      const method = replace ? "replaceState" : "pushState";
+      window.history[method]({ menuApp: true, menuDepth: replace ? currentDepth : currentDepth + 1, view: nextView, categoryId }, "", nextPath);
+    }
+    setView(nextView);
+    if (nextView === "category") setActiveCategory(categoryId);
+    setSearch("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const navigateBack = useCallback((fallbackView, fallbackCategoryId = null) => {
+    if ((Number(window.history.state?.menuDepth) || 0) > 0) window.history.back();
+    else navigate(fallbackView, { categoryId: fallbackCategoryId, replace: true });
+  }, [navigate]);
+
+  const selectCategory = useCallback((categoryId) => {
+    navigate("category", { categoryId });
+  }, [navigate]);
 
   const reloadStore = useCallback(async () => {
     try {
@@ -262,14 +286,17 @@ function App() {
   }, [store.settings]);
 
   useEffect(() => {
-    const target = view === "admin" ? "/admin" : "/";
-    if (window.location.pathname !== target) window.history.pushState({ view }, "", target);
-  }, [view]);
-
-  useEffect(() => {
-    const navigate = () => setView(window.location.pathname === "/admin" ? "admin" : "home");
-    window.addEventListener("popstate", navigate);
-    return () => window.removeEventListener("popstate", navigate);
+    const initialRoute = routeFromPath(window.location.pathname);
+    window.history.replaceState({ ...window.history.state, menuApp: true, menuDepth: 0, ...initialRoute }, "", pathForView(initialRoute.view, initialRoute.categoryId));
+    const restoreRoute = () => {
+      const route = routeFromPath(window.location.pathname);
+      setView(route.view);
+      setActiveCategory(route.categoryId);
+      setSearch("");
+      window.scrollTo({ top: 0, behavior: "auto" });
+    };
+    window.addEventListener("popstate", restoreRoute);
+    return () => window.removeEventListener("popstate", restoreRoute);
   }, []);
 
   useEffect(() => {
@@ -356,20 +383,14 @@ function App() {
   }, [search, visibleProducts, visibleCategories]);
 
   function openCategory(categoryId) {
-    setActiveCategory(categoryId);
-    setSearch("");
-    setView("category");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    navigate("category", { categoryId });
   }
 
   function openCategories() {
-    setActiveCategory((current) => current || visibleCategories[0]?.id || null);
-    setSearch("");
-    setView("category");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    navigate("category", { categoryId: activeCategory || visibleCategories[0]?.id || null });
   }
 
-  function addToCart(product) {
+  const addToCart = useCallback((product) => {
     if (isSoldOut(product)) return showNotice("Produto esgotado não pode ser adicionado.", "error");
     setCart((current) => {
       const existing = current.find((item) => item.id === product.id);
@@ -378,7 +399,7 @@ function App() {
         : [...current, { id: product.id, qty: 1 }];
     });
     showNotice("Produto adicionado ao carrinho.", "success");
-  }
+  }, [showNotice]);
 
   function updateQty(productId, delta) {
     setCart((current) => current.map((item) => item.id === productId ? { ...item, qty: Math.max(0, item.qty + delta) } : item).filter((item) => item.qty > 0));
@@ -533,7 +554,7 @@ function App() {
   return (
     <div className={view === "admin" ? "app-shell admin-shell" : "app-shell"}>
       <header className="topbar">
-        <button className="brand-lockup" onClick={() => setView("home")} aria-label="Ir para o início">
+        <button className="brand-lockup" onClick={() => navigate("home")} aria-label="Ir para o início">
           {store.settings.brand_logo_url
             ? <img src={store.settings.brand_logo_url} alt="" />
             : <span className="brand-mark"><Flame size={24} /></span>}
@@ -541,7 +562,7 @@ function App() {
         </button>
         <div className="header-actions">
           <span className={status.open ? "open-status" : "open-status closed"}><i />{status.label}</span>
-          <button className="admin-shortcut" onClick={() => setView("admin")} aria-label="Abrir área administrativa"><Settings size={21} /><small>Admin</small></button>
+          <button className="admin-shortcut" onClick={() => navigate("admin")} aria-label="Abrir área administrativa"><Settings size={21} /><small>Admin</small></button>
         </div>
       </header>
 
@@ -555,18 +576,18 @@ function App() {
         {search.trim() && view !== "admin" && <ProductList title="Resultado da busca" products={filteredProducts} onAdd={addToCart} onBack={() => setSearch("")} />}
 
         {!search.trim() && view === "home" && <div className="home-view">
-          <button className="delivery-address-card" type="button" onClick={() => cartLines.length ? setView("checkout") : openCategories()}>
+          <button className="delivery-address-card" type="button" onClick={() => cartLines.length ? navigate("checkout") : openCategories()}>
             <span className="address-icon"><MapPin size={23} /></span>
             <span><small>Entregar em</small><strong>{selectedDeliveryAddress}</strong>{checkout.neighborhood && <em>{checkout.neighborhood}, {checkout.city} - {checkout.state}</em>}</span>
             <ChevronDown size={20} />
           </button>
           <section className={store.settings.brand_hero_url ? "hero" : "hero hero-placeholder"}>
-            {store.settings.brand_hero_url && <img src={store.settings.brand_hero_url} alt={`Banner ${store.settings.store_name}`} />}
+            {store.settings.brand_hero_url && <img src={store.settings.brand_hero_url} alt={`Banner ${store.settings.store_name}`} decoding="async" fetchPriority="high" />}
             <div className="hero-copy"><span>Feito para compartilhar</span><h1>{store.settings.store_name}</h1><p>{store.settings.store_description || "Sabor marcante, preparado com carinho."}</p>{visibleCategories.length > 0 && <button type="button" onClick={() => openCategory(visibleCategories[0].id)}>Peça agora <ChevronRight size={18} /></button>}</div>
           </section>
           <section className="category-section">
             <div className="section-heading"><div><span>Explore</span><h2>Categorias</h2></div><button type="button" onClick={openCategories}>Ver todas <ChevronRight size={17} /></button></div>
-            <div className="category-rail">{visibleCategories.map((category) => <button className={category.banner_url ? "category-tile" : "category-tile category-placeholder"} key={category.id} type="button" onClick={() => openCategory(category.id)}>{category.banner_url ? <img src={category.banner_url} alt="" /> : <span><PackageCheck size={28}/></span>}<strong>{category.name}</strong><ChevronRight size={17}/></button>)}</div>
+            <div className="category-rail">{visibleCategories.map((category) => <button className={category.banner_url ? "category-tile" : "category-tile category-placeholder"} key={category.id} type="button" onClick={() => openCategory(category.id)}>{category.banner_url ? <img src={category.banner_url} alt="" loading="lazy" decoding="async" /> : <span><PackageCheck size={28}/></span>}<strong>{category.name}</strong><ChevronRight size={17}/></button>)}</div>
             {visibleCategories.length === 0 && <p className="empty">Nenhuma categoria cadastrada.</p>}
           </section>
           <section className="featured-section">
@@ -576,26 +597,26 @@ function App() {
           </section>
         </div>}
 
-        {!search.trim() && view === "category" && <CategoryView categories={visibleCategories} products={visibleProducts} activeCategory={activeCategory || currentCategory?.id} onSelect={setActiveCategory} onAdd={addToCart} />}
+        {!search.trim() && view === "category" && <CategoryView categories={visibleCategories} products={visibleProducts} activeCategory={activeCategory || currentCategory?.id} onSelect={selectCategory} onAdd={addToCart} />}
 
-        {!search.trim() && view === "cart" && <CartView cartLines={cartLines} subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} checkout={checkout} status={status} externalDelivery={deliveryAssessment.externalDelivery} onQty={updateQty} onRemove={(id) => setCart((current) => current.filter((item) => item.id !== id))} onCheckout={() => status.open ? setView("checkout") : showNotice(`Estamos fechados. Próxima abertura: ${status.nextLabel}.`, "error")} onBack={openCategories} />}
+        {!search.trim() && view === "cart" && <CartView cartLines={cartLines} subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} checkout={checkout} status={status} externalDelivery={deliveryAssessment.externalDelivery} onQty={updateQty} onRemove={(id) => setCart((current) => current.filter((item) => item.id !== id))} onCheckout={() => status.open ? navigate("checkout") : showNotice(`Estamos fechados. Próxima abertura: ${status.nextLabel}.`, "error")} onBack={openCategories} />}
 
-        {!search.trim() && view === "checkout" && <CheckoutView cartLines={cartLines} subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} checkout={checkout} setCheckoutField={setCheckoutField} finishOrder={finishOrder} deliveryLocation={deliveryLocation} deliveryAssessment={deliveryAssessment} postalCodeStatus={postalCodeStatus} addressValidationStatus={addressValidationStatus} validateDeliveryAddress={validateDeliveryAddress} validatingAddress={validatingAddress} pixCopyStatus={pixCopyStatus} copyPixKey={copyPixKey} status={status} settings={store.settings} availablePayments={availablePayments} minimumOrder={minimumOrder} submitting={submittingOrder} onBack={() => setView("cart")} />}
+        {!search.trim() && view === "checkout" && <CheckoutView cartLines={cartLines} subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} checkout={checkout} setCheckoutField={setCheckoutField} finishOrder={finishOrder} deliveryLocation={deliveryLocation} deliveryAssessment={deliveryAssessment} postalCodeStatus={postalCodeStatus} addressValidationStatus={addressValidationStatus} validateDeliveryAddress={validateDeliveryAddress} validatingAddress={validatingAddress} pixCopyStatus={pixCopyStatus} copyPixKey={copyPixKey} status={status} settings={store.settings} availablePayments={availablePayments} minimumOrder={minimumOrder} submitting={submittingOrder} onBack={() => navigateBack("cart")} />}
 
         {!search.trim() && view === "admin" && (authLoading
           ? <p className="empty">Verificando sessão...</p>
           : session && adminAuthorized
-            ? <AdminPanel store={store} session={session} reloadStore={reloadStore} showNotice={showNotice} onSignOut={logoutAdmin} />
+            ? <Suspense fallback={<p className="empty">Carregando área administrativa...</p>}><AdminPanel store={store} session={session} reloadStore={reloadStore} showNotice={showNotice} onSignOut={logoutAdmin} /></Suspense>
             : session
               ? <AdminAccessDenied message={adminAccessError} onSignOut={logoutAdmin} />
               : <AdminLogin showNotice={showNotice} />)}
       </main>
 
       <nav className="bottom-nav">
-        <button className={view === "home" ? "active" : ""} onClick={() => { setSearch(""); setView("home"); }}><Home size={21} /><span>Início</span></button>
+        <button className={view === "home" ? "active" : ""} onClick={() => navigate("home")}><Home size={21} /><span>Início</span></button>
         <button className={view === "category" ? "active" : ""} onClick={openCategories}><Grid2X2 size={21} /><span>Categorias</span></button>
-        <button className={view === "cart" || view === "checkout" ? "active cart-nav-button" : "cart-nav-button"} onClick={() => { setSearch(""); setView("cart"); }}><span className="nav-icon"><ShoppingCart size={23} />{cartCount > 0 && <b>{cartCount}</b>}</span><span>Carrinho</span></button>
-        <button className={view === "admin" ? "active" : ""} onClick={() => { setSearch(""); setView("admin"); }}><Settings size={21} /><span>Admin</span></button>
+        <button className={view === "cart" || view === "checkout" ? "active cart-nav-button" : "cart-nav-button"} onClick={() => navigate("cart")}><span className="nav-icon"><ShoppingCart size={23} />{cartCount > 0 && <b>{cartCount}</b>}</span><span>Carrinho</span></button>
+        <button className={view === "admin" ? "active" : ""} onClick={() => navigate("admin")}><Settings size={21} /><span>Admin</span></button>
       </nav>
     </div>
   );
@@ -605,30 +626,30 @@ function ClosedNotice({ status }) {
   return <div className="closed-notice"><Lock size={19} /><div><strong>Estamos fechados para pedidos</strong><span>Você pode consultar o cardápio. Próxima abertura: {status.nextLabel}.</span></div></div>;
 }
 
-function ProductCard({ product, onAdd, compact = false }) {
+const ProductCard = memo(function ProductCard({ product, onAdd, compact = false }) {
   return <article className={`${isSoldOut(product) ? "product-card soldout" : "product-card"}${compact ? " compact" : ""}`}>
-    <div className="product-media">{product.image ? <img src={product.image} alt={product.name} /> : <div className="image-placeholder"><PackageCheck size={30}/></div>}{isSoldOut(product) && <span>Esgotado</span>}</div>
+    <div className="product-media">{product.image ? <img src={product.image} alt={product.name} loading="lazy" decoding="async" /> : <div className="image-placeholder"><PackageCheck size={30}/></div>}{isSoldOut(product) && <span>Esgotado</span>}</div>
     <div className="product-info">
       <strong className="product-name">{product.name}</strong>
       {!compact && product.description && <p>{product.description}</p>}
       <div className="product-action"><div className="price-block"><strong>{money(product.price)}</strong>{product.featured && <small>Destaque</small>}</div><button type="button" aria-label={`Adicionar ${product.name}`} disabled={isSoldOut(product)} onClick={() => onAdd(product)}><Plus size={20}/><span>Adicionar</span></button></div>
     </div>
   </article>;
-}
+});
 
 function ProductList({ title, subtitle, products, onAdd, onBack }) {
   return <section className="products-view"><button className="back-button" onClick={onBack}><ArrowLeft size={18} />Voltar</button><div className="section-title"><h1>{title}</h1>{subtitle && <span>{subtitle}</span>}</div><div className="product-grid">{products.map((product) => <ProductCard key={product.id} product={product} onAdd={onAdd} />)}</div>{products.length === 0 && <p className="empty">Nenhum produto encontrado.</p>}</section>;
 }
 
-function CategoryView({ categories, products, activeCategory, onSelect, onAdd }) {
+const CategoryView = memo(function CategoryView({ categories, products, activeCategory, onSelect, onAdd }) {
   const selectedId = categories.some((category) => category.id === activeCategory) ? activeCategory : categories[0]?.id;
   const selected = categories.find((category) => category.id === selectedId);
   const categoryProducts = products.filter((product) => product.category === selectedId);
   return <section className="categories-view"><div className="page-heading"><span>Nosso cardápio</span><h1>Categorias</h1><p>{selected?.description || "Escolha seus itens favoritos"}</p></div><div className="category-tabs" role="tablist">{categories.map((category) => <button type="button" role="tab" aria-selected={selectedId === category.id} className={selectedId === category.id ? "active" : ""} key={category.id} onClick={() => onSelect(category.id)}>{category.name}</button>)}</div><div className="product-grid">{categoryProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={onAdd}/>)}</div>{categories.length === 0 ? <p className="empty">Nenhuma categoria cadastrada.</p> : categoryProducts.length === 0 && <p className="empty">Nenhum produto ativo nesta categoria.</p>}</section>;
-}
+});
 
 function CartView({ cartLines, subtotal, deliveryFee, cardFee, isCardPayment, total, checkout, status, externalDelivery, onQty, onRemove, onCheckout, onBack }) {
-  return <section className="cart-view"><button className="back-button" onClick={onBack}><ArrowLeft size={18} />Continuar escolhendo</button><div className="page-heading"><span>Seu pedido</span><h1>Carrinho</h1><p>Confira seus itens e finalize com segurança</p></div>{cartLines.length ? <><div className="cart-list">{cartLines.map((item) => <article className="cart-item" key={item.id}>{item.product.image?<img src={item.product.image} alt={item.product.name} />:<div className="image-placeholder small"><PackageCheck size={22}/></div>}<div className="cart-item-copy"><strong>{item.product.name}</strong>{item.product.description && <span>{item.product.description}</span>}<b>{money(item.product.price)}</b><div className="qty-row"><button onClick={() => onQty(item.id, -1)} aria-label="Diminuir"><Minus size={16} /></button><strong>{item.qty}</strong><button onClick={() => onQty(item.id, 1)} aria-label="Aumentar"><Plus size={16} /></button></div></div><button className="remove-line" onClick={() => onRemove(item.id)} aria-label={`Remover ${item.product.name}`}><Trash2 size={18} /></button></article>)}</div><Totals subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} deliveryType={checkout.deliveryType} externalDelivery={externalDelivery}/><button className="primary-action" disabled={!status.open} onClick={onCheckout}><MessageCircle size={20}/>{status.open ? "Continuar para o checkout" : "Fechado para pedidos"}</button>{!status.open && <p className="action-help">Próxima abertura: {status.nextLabel}.</p>}</> : <div className="empty-state"><ShoppingCart size={34}/><strong>Seu carrinho está vazio</strong><p>Explore as categorias e escolha seus favoritos.</p><button type="button" onClick={onBack}>Ver cardápio</button></div>}</section>;
+  return <section className="cart-view"><button className="back-button" onClick={onBack}><ArrowLeft size={18} />Continuar escolhendo</button><div className="page-heading"><span>Seu pedido</span><h1>Carrinho</h1><p>Confira seus itens e finalize com segurança</p></div>{cartLines.length ? <><div className="cart-list">{cartLines.map((item) => <article className="cart-item" key={item.id}>{item.product.image?<img src={item.product.image} alt={item.product.name} loading="lazy" decoding="async" />:<div className="image-placeholder small"><PackageCheck size={22}/></div>}<div className="cart-item-copy"><strong>{item.product.name}</strong>{item.product.description && <span>{item.product.description}</span>}<b>{money(item.product.price)}</b><div className="qty-row"><button onClick={() => onQty(item.id, -1)} aria-label="Diminuir"><Minus size={16} /></button><strong>{item.qty}</strong><button onClick={() => onQty(item.id, 1)} aria-label="Aumentar"><Plus size={16} /></button></div></div><button className="remove-line" onClick={() => onRemove(item.id)} aria-label={`Remover ${item.product.name}`}><Trash2 size={18} /></button></article>)}</div><Totals subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} deliveryType={checkout.deliveryType} externalDelivery={externalDelivery}/><button className="primary-action" disabled={!status.open} onClick={onCheckout}><MessageCircle size={20}/>{status.open ? "Continuar para o checkout" : "Fechado para pedidos"}</button>{!status.open && <p className="action-help">Próxima abertura: {status.nextLabel}.</p>}</> : <div className="empty-state"><ShoppingCart size={34}/><strong>Seu carrinho está vazio</strong><p>Explore as categorias e escolha seus favoritos.</p><button type="button" onClick={onBack}>Ver cardápio</button></div>}</section>;
 }
 
 function CheckoutView({ cartLines, subtotal, deliveryFee, cardFee, isCardPayment, total, checkout, setCheckoutField, finishOrder, deliveryLocation, deliveryAssessment, postalCodeStatus, addressValidationStatus, validateDeliveryAddress, validatingAddress, pixCopyStatus, copyPixKey, status, settings, availablePayments, minimumOrder, submitting, onBack }) {
@@ -655,7 +676,7 @@ function CheckoutView({ cartLines, subtotal, deliveryFee, cardFee, isCardPayment
     </>}
     <div className="option-group"><span>Forma de pagamento</span><div className="payment-list">{availablePayments.map((method)=>{const Icon=method.icon;return <PaymentButton key={method.id} icon={<Icon size={18}/>} active={checkout.payment===method.id} label={method.label} onClick={()=>setCheckoutField("payment",method.id)}/>;})}</div>{availablePayments.length===0&&<small className="address-helper error">Nenhuma forma de pagamento configurada.</small>}</div>
     {checkout.payment === "dinheiro" && <div className="option-group change-option"><span>Precisa de troco?</span><div className="segmented"><button type="button" className={!checkout.needsChange ? "selected" : ""} onClick={() => setCheckoutField("needsChange", false)}>Não</button><button type="button" className={checkout.needsChange ? "selected" : ""} onClick={() => setCheckoutField("needsChange", true)}>Sim</button></div>{checkout.needsChange && <label>Troco para quanto?<input inputMode="decimal" placeholder="R$ 100,00" value={checkout.changeFor} onBlur={() => setCheckoutField("changeFor", moneyFromInput(checkout.changeFor))} onChange={(event) => setCheckoutField("changeFor", event.target.value)} /></label>}</div>}
-    {checkout.payment === "pix" && settings.pix_enabled && <div className="pix-box">{settings.pix_qr_code_url&&<img className="pix-qr" src={settings.pix_qr_code_url} alt="QR Code Pix" />}<div><strong>Pix</strong><p>Nome: {settings.pix_name}</p><p>{settings.pix_key}</p><button type="button" className="copy-pix-button" onClick={copyPixKey}>Copiar chave Pix</button>{pixCopyStatus && <span className="pix-copy-status">{pixCopyStatus}</span>}<small>Envie o pedido antes de pagar e encaminhe o comprovante pelo WhatsApp.</small></div></div>}
+    {checkout.payment === "pix" && settings.pix_enabled && <div className="pix-box">{settings.pix_qr_code_url&&<img className="pix-qr" src={settings.pix_qr_code_url} alt="QR Code Pix" loading="lazy" decoding="async" />}<div><strong>Pix</strong><p>Nome: {settings.pix_name}</p><p>{settings.pix_key}</p><button type="button" className="copy-pix-button" onClick={copyPixKey}>Copiar chave Pix</button>{pixCopyStatus && <span className="pix-copy-status">{pixCopyStatus}</span>}<small>Envie o pedido antes de pagar e encaminhe o comprovante pelo WhatsApp.</small></div></div>}
     <label>Observação do pedido<textarea value={checkout.notes} onChange={(event) => setCheckoutField("notes", event.target.value)} /></label><div className="mini-order"><strong>{cartLines.length} item(ns) no pedido</strong><Totals subtotal={subtotal} deliveryFee={deliveryFee} cardFee={cardFee} isCardPayment={isCardPayment} total={total} deliveryType={checkout.deliveryType} deliveryDistance={deliveryLocation} externalDelivery={deliveryAssessment.externalDelivery} /></div>
     {!status.open && <div className="form-error">Estamos fechados. Próxima abertura: {status.nextLabel}.</div>}{belowMinimum&&<div className="form-error">Pedido mínimo: {money(minimumOrder)}.</div>}{needsAddress && !deliveryAssessment.allowed && <div className="form-error">{deliveryErrorMessage}</div>}
     <button className="primary-action" type="submit" disabled={blocked}><MessageCircle size={19} />{submitting ? "Validando e salvando..." : status.open ? "Enviar para WhatsApp" : "Fechado para pedidos"}</button>
